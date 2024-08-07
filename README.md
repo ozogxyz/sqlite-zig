@@ -1,3 +1,9 @@
+# SQLite implementation in Zig. 
+
+This is a personal project to learn more about database internals and SQLite implementation.
+
+Resources: [SQLite documentation](https://www.sqlite.org/fileformat2.html)
+
 # Excerpt from SQLIte Documentation
 
 This is the official documentation for the database file format for ease of reference within the repo.
