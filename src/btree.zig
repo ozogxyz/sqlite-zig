@@ -13,6 +13,27 @@ pub const PageType = enum(u8) {
     LeafTable = 13,
 };
 
+pub const CellType = union(enum) {
+    InteriorIndex: struct {
+        left_child_ptr: u32,
+        payload_size: u64,
+        payload: []const u8,
+    },
+    InteriorTable: struct {
+        left_child_ptr: u32,
+        rowid: u64,
+    },
+    LeafIndex: struct {
+        payload_size: u64,
+        payload: []const u8,
+    },
+    LeafTable: struct {
+        payload_size: u64,
+        rowid: u64,
+        payload: []const u8,
+    },
+};
+
 pub const PageHeader = struct {
     page_type: PageType,
     first_freeblock_offset: u16,
@@ -95,5 +116,77 @@ pub const SQLiteReader = struct {
         }
 
         return header;
+    }
+
+    pub fn parseCell(page: []const u8, page_type: PageType, cell_offset: u16, alloc: mem.Allocator) !CellType {
+        var stream = std.io.fixedBufferStream(page[cell_offset..]);
+        var reader = stream.reader();
+
+        switch (page_type) {
+            .InteriorIndex => {
+                const left_child_ptr = try reader.readInt(u32, .big);
+                const payload_size = try utils.readVarint(&reader);
+                const payload = try alloc.alloc(u8, @intCast(payload_size));
+                _ = try reader.readAll(payload);
+                return CellType{
+                    .InteriorIndex = .{
+                        .left_child_ptr = left_child_ptr,
+                        .payload_size = payload_size,
+                        .payload = payload,
+                    },
+                };
+            },
+            .InteriorTable => {
+                const left_child_ptr = try reader.readInt(u32, .big);
+                const rowid = try utils.readVarint(&reader);
+                return CellType{
+                    .InteriorTable = .{
+                        .left_child_ptr = left_child_ptr,
+                        .rowid = rowid,
+                    },
+                };
+            },
+            .LeafIndex => {
+                const payload_size = try utils.readVarint(&reader);
+                const payload = try alloc.alloc(u8, @intCast(payload_size));
+                _ = try reader.readAll(payload);
+                return CellType{
+                    .LeafIndex = .{
+                        .payload_size = payload_size,
+                        .payload = payload,
+                    },
+                };
+            },
+            .LeafTable => {
+                const payload_size = try utils.readVarint(&reader);
+                const rowid = try utils.readVarint(&reader);
+                const payload = try alloc.alloc(u8, @intCast(payload_size));
+                _ = try reader.readAll(payload);
+                return CellType{
+                    .LeafTable = .{
+                        .payload_size = payload_size,
+                        .rowid = rowid,
+                        .payload = payload,
+                    },
+                };
+            },
+        }
+    }
+
+    pub fn parseCells(page: []const u8, comptime is_first_page: bool, alloc: mem.Allocator) ![]CellType {
+        const header = try SQLiteReader.parsePageHeader(page, is_first_page);
+        const cells = try alloc.alloc(CellType, header.cell_count);
+        errdefer alloc.free(cells);
+
+        const cell_ptr_arr_offset = if (is_first_page) SQLITE_HEADER_SIZE + 8 else 8;
+        var cell_ptr_stream = std.io.fixedBufferStream(page[cell_ptr_arr_offset..]);
+        var cell_ptr_reader = cell_ptr_stream.reader();
+
+        for (cells) |*cell| {
+            const cell_offset = try cell_ptr_reader.readInt(u16, .big);
+            cell.* = try SQLiteReader.parseCell(page, header.page_type, cell_offset, alloc);
+        }
+
+        return cells;
     }
 };

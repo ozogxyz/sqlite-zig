@@ -1,10 +1,11 @@
 const std = @import("std");
 
-pub fn readVarint(buf: []const u8) !u64 {
+pub fn readVarint(reader: anytype) !u64 {
     var result: u64 = 0;
     var shift: u6 = 0;
 
-    for (buf) |byte| {
+    while (true) {
+        const byte = try reader.readByte();
         result |= @as(u64, byte & 0x7F) << shift;
         if (byte & 0x80 == 0) break;
         shift += 7;

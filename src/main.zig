@@ -1,5 +1,5 @@
 const std = @import("std");
-
+const print = std.debug.print;
 const SQLiteReader = @import("btree.zig").SQLiteReader;
 const utils = @import("utils.zig");
 
@@ -31,23 +31,47 @@ pub fn main() !void {
             .{},
         );
 
+        // SQLite Header
         var reader = try SQLiteReader.init("sample.db");
         defer reader.deinit();
 
-        std.debug.print("Page size: {}\n", .{reader.page_size});
-        std.debug.print("Database size: {}\n", .{reader.database_size});
+        print("Page size: {}\n", .{reader.page_size});
+        print("Database size: {}\n", .{reader.database_size});
 
+        // Page 1
         const page1 = try reader.readPage(1, allocator);
         defer allocator.free(page1);
 
-        std.debug.print("First byte of page 1: {x:0>2}\n", .{page1[0]});
-        std.debug.print("Bytes 101-104 of page 1: {x:0>2} {x:0>2} {x:0>2} {x:0>2}\n", .{ page1[100], page1[101], page1[102], page1[103] });
-
-        utils.hexdump(page1, 16);
+        utils.hexdump(page1[100..116], 16);
 
         const header = try SQLiteReader.parsePageHeader(page1, true);
-        std.debug.print("Page type: {}\n", .{header.page_type});
-        std.debug.print("Cell count: {}\n", .{header.cell_count});
-        std.debug.print("Cell content offset: {}\n", .{header.cell_content_offset});
+        print("Page type: {}\n", .{header.page_type});
+        print("Cell count: {}\n", .{header.cell_count});
+        print("Cell content offset: {}\n", .{header.cell_content_offset});
+
+        // Cell reading
+        const cells = try SQLiteReader.parseCells(page1, true, allocator);
+        defer {
+            for (cells) |cell| {
+                switch (cell) {
+                    .LeafTable => |c| allocator.free(c.payload),
+                    .LeafIndex => |c| allocator.free(c.payload),
+                    .InteriorIndex => |c| allocator.free(c.payload),
+                    .InteriorTable => {},
+                }
+            }
+            allocator.free(cells);
+        }
+
+        print("Number of cells on page 1: {}\n", .{cells.len});
+        for (cells, 0..cells.len) |cell, i| {
+            print("Cell {}: ", .{i});
+            switch (cell) {
+                .InteriorIndex => |c| print("InteriorIndex (left child: {}, payload_size: {})\n", .{ c.left_child_ptr, c.payload_size }),
+                .InteriorTable => |c| print("InteriorTable (left child: {}, rowid: {})\n", .{ c.left_child_ptr, c.rowid }),
+                .LeafIndex => |c| print("LeafIndex (payload_size: {})\n", .{c.payload_size}),
+                .LeafTable => |c| print("LeafTable (rowid: {}, payload_size: {})\n", .{ c.rowid, c.payload_size }),
+            }
+        }
     }
 }
