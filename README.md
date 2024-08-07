@@ -4,7 +4,7 @@ This is a personal project to learn more about database internals and SQLite imp
 
 Resources: [SQLite documentation](https://www.sqlite.org/fileformat2.html)
 
-# Excerpt from SQLIte Documentation
+# Excerpt from the SQLite Documentation
 
 This is the official documentation for the database file format for ease of reference within the repo.
 
